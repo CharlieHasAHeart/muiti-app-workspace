@@ -10,6 +10,7 @@ from md2word import convert_markdown_to_docx
 app = Flask(__name__)
 
 DEFAULT_TEMPLATE = os.path.abspath("assets/reference.docx")
+TEMPLATE_PATH_ENV = "DOCX_TEMPLATE_PATH"
 
 HTML = """
 <!doctype html>
@@ -167,12 +168,6 @@ HTML = """
           <label for=\"mdFile\">Markdown 文件</label>
           <input id=\"mdFile\" type=\"file\" accept=\".md,text/markdown,text/plain\" required />
         </div>
-
-        <div class=\"row\">
-          <label for=\"templateFile\">模板文件（可选）</label>
-          <input id=\"templateFile\" type=\"file\" accept=\".docx\" />
-          <div class=\"hint\">不上传时默认使用 assets/reference.docx</div>
-        </div>
       </div>
 
       <div class=\"grid\">
@@ -202,7 +197,6 @@ HTML = """
 
   <script>
     const mdFileInput = document.getElementById('mdFile');
-    const templateFileInput = document.getElementById('templateFile');
     const titleInput = document.getElementById('title');
     const outputNameInput = document.getElementById('outputName');
     const generateBtn = document.getElementById('generateBtn');
@@ -241,10 +235,6 @@ HTML = """
       try {
         const form = new FormData();
         form.append('md_file', mdFile);
-        const templateFile = templateFileInput.files && templateFileInput.files[0];
-        if (templateFile) {
-          form.append('template_file', templateFile);
-        }
         form.append('title', titleInput.value || '');
         form.append('output_name', outputNameInput.value || '');
 
@@ -297,25 +287,19 @@ def index():
 @app.post("/api/generate")
 def generate_docx():
     md_file = request.files.get("md_file")
-    template_file = request.files.get("template_file")
     output_name = (request.form.get("output_name") or "").strip()
     title = (request.form.get("title") or "").strip()
+    template_path = os.path.abspath(os.getenv(TEMPLATE_PATH_ENV, DEFAULT_TEMPLATE))
 
     if not md_file:
         return jsonify({"error": "缺少 Markdown 文件（md_file）"}), 400
 
-    if template_file is None and not os.path.exists(DEFAULT_TEMPLATE):
-        return jsonify({"error": f"默认模板不存在: {DEFAULT_TEMPLATE}"}), 400
+    if not os.path.exists(template_path):
+        return jsonify({"error": f"模板不存在，请检查 {TEMPLATE_PATH_ENV}: {template_path}"}), 400
 
     with tempfile.TemporaryDirectory(prefix="md2word_web_") as tmpdir:
         md_path = os.path.join(tmpdir, secure_filename(md_file.filename or "input.md"))
         md_file.save(md_path)
-
-        if template_file is not None:
-            template_path = os.path.join(tmpdir, secure_filename(template_file.filename or "template.docx"))
-            template_file.save(template_path)
-        else:
-            template_path = DEFAULT_TEMPLATE
 
         if not output_name:
             base, _ = os.path.splitext(os.path.basename(md_path))

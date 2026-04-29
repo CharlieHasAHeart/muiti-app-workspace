@@ -8,7 +8,13 @@
 ## 安装
 
 ```bash
-pip install -e .
+uv sync
+```
+
+如需在虚拟环境中执行命令：
+
+```bash
+uv run md2word -i input.md -t template.docx -o output.docx
 ```
 
 ## CLI 版本
@@ -16,13 +22,13 @@ pip install -e .
 参数模式：
 
 ```bash
-md2word -i input.md -t template.docx -o output.docx
+uv run md2word -i input.md -t template.docx -o output.docx
 ```
 
 交互模式：
 
 ```bash
-md2word
+uv run md2word
 ```
 
 ## Web 版本
@@ -30,7 +36,13 @@ md2word
 启动：
 
 ```bash
-python3 web_app.py
+uv run python web_app.py
+```
+
+可通过环境变量指定内置模板路径（默认 `assets/reference.docx`）：
+
+```bash
+DOCX_TEMPLATE_PATH=assets/reference.docx uv run python web_app.py
 ```
 
 默认监听：
@@ -40,8 +52,8 @@ python3 web_app.py
 页面上传：
 
 - Markdown 文件
-- Word 模板（`.docx`，可选；不传则使用 `assets/reference.docx`）
 - `title` 占位符文本（可选）
+- 模板由服务端环境变量 `DOCX_TEMPLATE_PATH` 指定，不允许前端上传
 
 转换后浏览器直接下载结果文档。
 
@@ -59,3 +71,27 @@ python3 web_app.py
 ## 许可证
 
 Apache-2.0
+
+## Docker
+
+构建并启动：
+
+```bash
+docker compose up --build
+```
+
+访问：
+
+- `http://127.0.0.1:8000`
+
+后台运行：
+
+```bash
+docker compose up -d --build
+```
+
+停止：
+
+```bash
+docker compose down
+```

@@ -1,0 +1,12 @@
+services:
+  md2word-web:
+    image: md2word-web:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: md2word-web
+    ports:
+      - "3001:8000"
+    environment:
+      DOCX_TEMPLATE_PATH: /app/assets/reference.docx
+    restart: unless-stopped
