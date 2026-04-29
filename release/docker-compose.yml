@@ -1,12 +1,9 @@
 services:
   md2word-web:
-    image: md2word-web:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: registry.cloudbility.com.cn/charmirror/md2word/md2word-web:r20260429
     container_name: md2word-web
     ports:
-      - "8000:8000"
+      - "3002:8000"
     environment:
       DOCX_TEMPLATE_PATH: /app/assets/reference.docx
     restart: unless-stopped
