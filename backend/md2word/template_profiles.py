@@ -145,8 +145,8 @@ TEMPLATE_PROFILES: dict[str, TemplateProfile] = {
         supports_cover=True,
         supports_toc=True,
         header_uses_title=True,
-        notes="当前项目已经接入的可渲染模板。",
-        styles=DEFAULT_STYLE_PROFILE,
+        notes="当前默认内置模板",
+        styles=CLOUDBILITY_STYLE_PROFILE,
     ),
     "cloudbility-long": TemplateProfile(
         id="cloudbility-long",
