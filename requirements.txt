@@ -1,6 +1,0 @@
-docxtpl
-docxcompose
-python-docx
-markdown
-beautifulsoup4
-flask

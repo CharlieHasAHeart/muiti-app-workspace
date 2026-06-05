@@ -1,9 +1,18 @@
 services:
-  md2word-web:
-    image: registry.cloudbility.com.cn/charmirror/md2word/md2word-web:r20260429
-    container_name: md2word-web
+  backend:
+    image: registry.cloudbility.com.cn/charmirror/multi-app/backend:r20260604.2
+    container_name: md2word-backend
+    env_file:
+      - .env
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  frontend:
+    image: registry.cloudbility.com.cn/charmirror/multi-app/frontend:r20260604.2
+    container_name: md2word-frontend
+    depends_on:
+      - backend
     ports:
-      - "3002:8000"
-    environment:
-      DOCX_TEMPLATE_PATH: /app/assets/reference.docx
+      - "3002:80"
     restart: unless-stopped

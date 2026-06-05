@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 960">
+  <defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#eef7ff"/><stop offset="1" stop-color="#ffffff"/></linearGradient></defs>
+  <rect width="720" height="960" rx="34" fill="url(#g1)"/>
+  <rect x="80" y="80" width="560" height="800" rx="18" fill="#fff" stroke="#dfe7f0"/>
+  <text x="360" y="210" text-anchor="middle" font-size="22" fill="#5b6b86">Cloudbility 短版</text>
+  <text x="360" y="346" text-anchor="middle" font-size="52" font-weight="700" fill="#0f172a">Cloudbility</text>
+  <text x="360" y="412" text-anchor="middle" font-size="28" fill="#2563eb">Short Template</text>
+  <rect x="130" y="530" width="460" height="12" rx="6" fill="#dbeafe"/>
+  <rect x="130" y="570" width="420" height="12" rx="6" fill="#dbeafe"/>
+  <rect x="130" y="650" width="460" height="140" rx="18" fill="#f8fbff" stroke="#dbeafe"/>
+</svg>

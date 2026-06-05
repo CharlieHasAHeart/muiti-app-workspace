@@ -1,12 +1,24 @@
 services:
-  md2word-web:
-    image: md2word-web:latest
+  backend:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: md2word-web
+      dockerfile: backend/Dockerfile
+      target: prod
+    container_name: md2word-backend
+    env_file:
+      - .env
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      target: prod
+    container_name: md2word-frontend
+    depends_on:
+      - backend
     ports:
-      - "8000:8000"
-    environment:
-      DOCX_TEMPLATE_PATH: /app/assets/reference.docx
+      - "8080:80"
     restart: unless-stopped

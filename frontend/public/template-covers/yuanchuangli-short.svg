@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 960">
+  <rect width="720" height="960" rx="34" fill="#fffaf4"/>
+  <rect x="80" y="80" width="560" height="800" rx="18" fill="#fff" stroke="#efe2cd"/>
+  <text x="360" y="210" text-anchor="middle" font-size="22" fill="#8a6a37">源创力 短版</text>
+  <text x="360" y="340" text-anchor="middle" font-size="54" font-weight="700" fill="#1f2937">源创力</text>
+  <text x="360" y="406" text-anchor="middle" font-size="28" fill="#d97706">Short Template</text>
+  <rect x="132" y="534" width="456" height="12" rx="6" fill="#fde7c5"/>
+  <rect x="132" y="574" width="418" height="12" rx="6" fill="#fde7c5"/>
+  <rect x="132" y="652" width="456" height="140" rx="18" fill="#fffaf0" stroke="#fde7c5"/>
+</svg>

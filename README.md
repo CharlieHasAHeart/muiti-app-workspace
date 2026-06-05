@@ -1,97 +1,103 @@
-# md2word
+# md2word Workspace
 
-`md2word` 是一个通用 Markdown 到 Word (`.docx`) 转换工具，提供两个入口：
+A multi-app workspace built with FastAPI, Vite, React, and TypeScript.
 
-- CLI 命令行版本
-- Web 页面版本
+## Overview
 
-## 安装
+This repository currently ships one tool:
 
-```bash
-uv sync
-```
+- `md2word`: convert Markdown into Word (`.docx`) documents
 
-如需在虚拟环境中执行命令：
+The workspace shell is designed to host more tools over time behind a shared backend and frontend.
 
-```bash
-uv run md2word -i input.md -t template.docx -o output.docx
-```
+## Stack
 
-## CLI 版本
+- FastAPI backend
+- Vite + React + TypeScript frontend
+- `uv` for Python environment management
+- Docker Compose for container-first development
 
-参数模式：
+## Quick Start
 
-```bash
-uv run md2word -i input.md -t template.docx -o output.docx
-```
+### Preferred: Container-first
 
-交互模式：
+Start the development services first:
 
 ```bash
-uv run md2word
+docker compose -f docker-compose.dev.yml up --build
 ```
 
-## Web 版本
-
-启动：
+Then use the running containers for routine work:
 
 ```bash
-uv run python web_app.py
+docker exec md2word-backend-dev sh -lc 'cd /app/backend && uv run pytest -q'
+docker exec md2word-frontend-dev sh -lc 'cd /app/frontend && npm test'
+docker exec md2word-frontend-dev sh -lc 'cd /app/frontend && npm run build'
 ```
 
-可通过环境变量指定内置模板路径（默认 `assets/reference.docx`）：
+Default local endpoints:
+
+- Frontend: `http://127.0.0.1:5173`
+- Backend: `http://127.0.0.1:8000`
+
+### Secondary: Host convenience
+
+Use host commands only when container execution is not practical:
 
 ```bash
-DOCX_TEMPLATE_PATH=assets/reference.docx uv run python web_app.py
+uv sync --project backend
+uv run --project backend python -m backend.main
+
+cd frontend
+npm install
+npm run dev
 ```
 
-默认监听：
+## CLI
 
-- `http://127.0.0.1:8000`
+```bash
+uv run --project backend md2word -i input.md -t backend/md2word/templates/reference.docx -o output.docx
+```
 
-页面上传：
+## Build
 
-- Markdown 文件
-- `title` 占位符文本（可选）
-- 模板由服务端环境变量 `DOCX_TEMPLATE_PATH` 指定，不允许前端上传
+Preferred:
 
-转换后浏览器直接下载结果文档。
+```bash
+docker exec md2word-frontend-dev sh -lc 'cd /app/frontend && npm run build'
+```
 
-## 模板要求
+Fallback:
 
-模板中需要有占位符：
-
-- `{{main_content}}`
-- `{{title}}`（可选，若模板使用了该字段）
-
-## 示例
-
-可使用 `test/docs_sample.md` 进行测试。
-
-## 许可证
-
-Apache-2.0
+```bash
+cd frontend
+npm run build
+```
 
 ## Docker
 
-构建并启动：
+Development:
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+Production-style local run:
 
 ```bash
 docker compose up --build
 ```
 
-访问：
+Then open:
 
-- `http://127.0.0.1:8000`
+- `http://127.0.0.1:8080`
 
-后台运行：
+## Documentation
 
-```bash
-docker compose up -d --build
-```
+- [Adding a New App](docs/adding-a-new-app.md)
+- [Markdown Output Spec](docs/markdown-output-spec.md)
+- [Agent Rules](AGENTS.md)
 
-停止：
+## License
 
-```bash
-docker compose down
-```
+Apache-2.0

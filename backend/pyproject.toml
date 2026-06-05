@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "md2word"
+version = "0.3.0"
+description = "Markdown to Word workspace with FastAPI backend and Vite/React frontend"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "docxtpl",
+  "docxcompose",
+  "python-docx",
+  "markdown",
+  "beautifulsoup4",
+  "fastapi",
+  "uvicorn[standard]",
+  "python-multipart",
+  "openai",
+]
+
+[project.scripts]
+md2word = "backend.md2word.converter:main"
+md2word-web = "backend.main:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = [".."]
+include = ["backend*"]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "httpx",
+]

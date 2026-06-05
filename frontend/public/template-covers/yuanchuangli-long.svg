@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 960">
+  <rect width="720" height="960" rx="34" fill="#fff9f1"/>
+  <rect x="80" y="70" width="560" height="820" rx="18" fill="#fff" stroke="#f1e2cb"/>
+  <rect x="80" y="70" width="560" height="250" rx="18" fill="#fff4df"/>
+  <text x="360" y="164" text-anchor="middle" font-size="22" fill="#8a6a37">源创力 长版</text>
+  <text x="360" y="254" text-anchor="middle" font-size="48" font-weight="700" fill="#1f2937">源创力</text>
+  <text x="360" y="306" text-anchor="middle" font-size="26" fill="#d97706">Long Template</text>
+  <text x="142" y="398" font-size="28" font-weight="700" fill="#1f2937">目录</text>
+  <rect x="142" y="434" width="436" height="8" rx="4" fill="#e8d7ba"/>
+  <rect x="142" y="470" width="436" height="8" rx="4" fill="#e8d7ba"/>
+  <rect x="142" y="506" width="390" height="8" rx="4" fill="#e8d7ba"/>
+  <rect x="142" y="610" width="436" height="144" rx="16" fill="#fffaf0" stroke="#fde7c5"/>
+</svg>

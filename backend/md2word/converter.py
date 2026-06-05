@@ -11,13 +11,24 @@ warnings.filterwarnings(
     category=UserWarning,
 )
 
-from docxtpl import DocxTemplate
-from docx.shared import Cm
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
-from markdown import markdown
 from bs4 import BeautifulSoup, NavigableString
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement, parse_xml
+from docx.oxml.ns import qn
+from docx.shared import Cm
+from docxtpl import DocxTemplate
+from markdown import markdown
+
+from .env_loader import load_dotenv
+from .heading_analyzer import (
+    FrontMatterPlan,
+    HeadingNormalizationPlan,
+    build_decision_plan,
+    normalize_markdown_with_decision,
+)
+from .template_profiles import TemplateProfile, TemplateStyleProfile, get_template_profile_by_path
+
+load_dotenv()
 
 _HEADING_NUM_PATTERNS = [
     r"^\s*第\s*([0-9]+|[一二三四五六七八九十百千]+)\s*(章|节|部分|篇)\s*[:：、\.\s]*",
@@ -25,43 +36,6 @@ _HEADING_NUM_PATTERNS = [
     r"^\s*\d+(?:\.\d+)+\s*[\.\)]?\s*",
     r"^\s*\d+\s*[、\.\)]\s*",
 ]
-
-_STYLE_ALIASES = {
-    "heading 1": ["heading 1", "Heading 1", "标题 1"],
-    "heading 2": ["heading 2", "Heading 2", "标题 2"],
-    "heading 3": ["heading 3", "Heading 3", "标题 3"],
-    "heading 4": ["heading 4", "Heading 4", "标题 4"],
-    "heading 5": ["heading 5", "Heading 5", "标题 5"],
-    "heading 6": ["heading 6", "Heading 6", "标题 6"],
-    "heading 7": ["heading 7", "Heading 7", "标题 7"],
-    "heading 8": ["heading 8", "Heading 8", "标题 8"],
-    "heading 9": ["heading 9", "Heading 9", "标题 9"],
-    "Normal": ["Normal", "正文"],
-    "Title": ["Title", "标题"],
-    "Subtitle": ["Subtitle", "副标题"],
-    "Quote": ["Quote", "引用"],
-    "引用块": ["引用块", "Quote", "Intense Quote"],
-    "提示块": ["提示块", "引用块", "Quote"],
-    "注意块": ["注意块", "引用块", "Quote"],
-    "警告块": ["警告块", "引用块", "Intense Quote"],
-    "Intense Quote": ["Intense Quote", "明显引用"],
-    "Intense Emphasis": ["Intense Emphasis", "强调"],
-    "List Paragraph": ["List Paragraph", "列表段落"],
-    "No List": ["No List", "无列表"],
-    "列表-无序": ["列表-无序", "List Paragraph", "List"],
-    "列表-有序": ["列表-有序", "List Paragraph", "List"],
-    "Default Paragraph Font": ["Default Paragraph Font", "默认段落字体"],
-    "Table Grid": ["Table Grid", "表格网格"],
-    "Normal Table": ["Normal Table", "普通表格"],
-    "header": ["header", "页眉"],
-    "footer": ["footer", "页脚"],
-    "page number": ["page number", "页码"],
-    "toc 1": ["toc 1", "目录 1"],
-    "toc 2": ["toc 2", "目录 2"],
-    "toc 3": ["toc 3", "目录 3"],
-    "toc 4": ["toc 4", "目录 4"],
-    "Caption": ["Caption", "题注", "图注"],
-}
 
 
 def strip_heading_number(text: str) -> str:
@@ -75,19 +49,22 @@ def strip_heading_number(text: str) -> str:
     return s
 
 
-def _iter_style_candidates(style_names: list[str]) -> list[str]:
-    candidates = []
-    seen = set()
-    for name in style_names:
-        for alias in _STYLE_ALIASES.get(name, [name]):
-            if alias not in seen:
-                candidates.append(alias)
-                seen.add(alias)
-    return candidates
+def cleanup_placeholder_paragraph(doc, placeholder: str) -> None:
+    for para in list(doc.paragraphs):
+        if para.text.strip() == placeholder:
+            para._element.getparent().remove(para._element)
+
+
+def remove_empty_subtitle_paragraph(doc, subtitle_style_candidates: list[str]) -> None:
+    candidates = set(subtitle_style_candidates)
+    for para in list(doc.paragraphs):
+        style_name = getattr(getattr(para, "style", None), "name", "")
+        if style_name in candidates and not para.text.strip():
+            para._element.getparent().remove(para._element)
 
 
 def apply_style(obj, style_names: list[str]) -> bool:
-    for name in _iter_style_candidates(style_names):
+    for name in style_names:
         try:
             obj.style = name
             return True
@@ -105,6 +82,49 @@ def update_fields_on_open(doc) -> None:
         settings.append(update_fields)
 
 
+def next_numbering_id(numbering_root) -> int:
+    num_ids = []
+    for num in numbering_root.findall(qn("w:num")):
+        value = num.get(qn("w:numId"))
+        if value and value.isdigit():
+            num_ids.append(int(value))
+    return max(num_ids, default=0) + 1
+
+
+def create_numbering_instance(document_part, abstract_num_id: int = 2) -> int:
+    numbering_root = document_part.numbering_part.numbering_definitions._numbering
+    num_id = next_numbering_id(numbering_root)
+    num_xml = (
+        f'<w:num xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        f'w:numId="{num_id}">'
+        f'<w:abstractNumId w:val="{abstract_num_id}"/>'
+        f'<w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride>'
+        f'</w:num>'
+    )
+    numbering_root.append(parse_xml(num_xml))
+    return num_id
+
+
+def apply_numbering(paragraph, num_id: int, ilvl: int = 0) -> None:
+    p_pr = paragraph._p.get_or_add_pPr()
+    num_pr = p_pr.numPr
+    if num_pr is None:
+        num_pr = OxmlElement("w:numPr")
+        p_pr.append(num_pr)
+
+    ilvl_el = num_pr.find(qn("w:ilvl"))
+    if ilvl_el is None:
+        ilvl_el = OxmlElement("w:ilvl")
+        num_pr.append(ilvl_el)
+    ilvl_el.set(qn("w:val"), str(ilvl))
+
+    num_id_el = num_pr.find(qn("w:numId"))
+    if num_id_el is None:
+        num_id_el = OxmlElement("w:numId")
+        num_pr.append(num_id_el)
+    num_id_el.set(qn("w:val"), str(num_id))
+
+
 def resolve_img_path(md_path: str, src: str) -> str:
     if os.path.isabs(src):
         return src
@@ -112,29 +132,33 @@ def resolve_img_path(md_path: str, src: str) -> str:
     return os.path.join(base_dir, src)
 
 
-def add_centered_image(subdoc, img_path: str, width_cm: float) -> None:
+def heading_style_names(styles: TemplateStyleProfile, level: int) -> list[str]:
+    return styles.headings.get(max(1, min(level, 6)), styles.headings[1])
+
+
+def add_centered_image(subdoc, img_path: str, width_cm: float, styles: TemplateStyleProfile) -> None:
     p = subdoc.add_paragraph()
-    if not apply_style(p, ["图片", "Normal"]):
+    if not apply_style(p, styles.image):
         p.style = "Normal"
     p.paragraph_format.keep_with_next = True
     run = p.add_run()
     run.add_picture(img_path, width=Cm(width_cm))
 
 
-def add_caption(subdoc, text: str) -> None:
+def add_caption(subdoc, text: str, styles: TemplateStyleProfile) -> None:
     if not text:
         return
     p = subdoc.add_paragraph(text)
-    if not apply_style(p, ["图注", "Caption", "Normal"]):
+    if not apply_style(p, styles.caption):
         p.style = "Normal"
     p.paragraph_format.keep_together = True
 
 
-def add_heading(subdoc, text: str, style_name: str) -> None:
+def add_heading(subdoc, text: str, style_names: list[str]) -> None:
     if not text:
         return
     p = subdoc.add_paragraph(text)
-    if not apply_style(p, [style_name, "heading 1"]):
+    if not apply_style(p, style_names):
         p.style = "Heading 1"
     fmt = p.paragraph_format
     fmt.left_indent = None
@@ -142,24 +166,39 @@ def add_heading(subdoc, text: str, style_name: str) -> None:
     fmt.hanging_indent = None
 
 
-def add_paragraph(subdoc, text: str, style_name: str) -> None:
+def render_heading_by_level(subdoc, text: str, level: int, styles: TemplateStyleProfile) -> None:
+    add_heading(subdoc, text, heading_style_names(styles, level))
+
+
+def add_paragraph(subdoc, text: str, style_names: list[str]) -> None:
     if not text:
         return
     p = subdoc.add_paragraph(text)
-    if not apply_style(p, [style_name, "Normal"]):
+    if not apply_style(p, style_names):
         p.style = "Normal"
 
 
-def add_paragraph_with_inline_code(subdoc, p_node, style_name: str) -> None:
+def normalize_inline_text(text: str, preserve_newlines: bool = True) -> str:
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    if preserve_newlines:
+        parts = [re.sub(r"[ \t]+", " ", part) for part in text.split("\n")]
+        return "\n".join(parts).strip("\n")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def add_paragraph_with_inline_code(subdoc, p_node, style_names: list[str], inline_code_styles: list[str], preserve_newlines: bool = True, prefix_text: str = ""):
     p = subdoc.add_paragraph()
-    if not apply_style(p, [style_name, "Normal"]):
+    if not apply_style(p, style_names):
         p.style = "Normal"
+
+    if prefix_text:
+        p.add_run(prefix_text)
 
     children = list(p_node.children)
     pending_thinspace = False
     for idx, child in enumerate(children):
         if isinstance(child, NavigableString):
-            text = str(child)
+            text = normalize_inline_text(str(child), preserve_newlines)
             if pending_thinspace and text.startswith(" "):
                 text = "\u2009" + text[1:]
                 pending_thinspace = False
@@ -173,11 +212,12 @@ def add_paragraph_with_inline_code(subdoc, p_node, style_name: str) -> None:
             code_text = child.get_text()
             if code_text:
                 run = p.add_run(code_text.replace(" ", "\u00A0"))
-                apply_style(run, ["行内代码", "Inline Code"])
+                apply_style(run, inline_code_styles)
             if idx + 1 < len(children) and isinstance(children[idx + 1], NavigableString):
                 pending_thinspace = True
         else:
             text = child.get_text(strip=False) if hasattr(child, "get_text") else str(child)
+            text = normalize_inline_text(text, preserve_newlines)
             if pending_thinspace and text.startswith(" "):
                 text = "\u2009" + text[1:]
                 pending_thinspace = False
@@ -186,17 +226,28 @@ def add_paragraph_with_inline_code(subdoc, p_node, style_name: str) -> None:
             if text:
                 p.add_run(text)
 
+    return p
 
-def add_list(subdoc, list_node, ordered: bool) -> None:
-    style_name = "列表-有序" if ordered else "列表-无序"
+
+def add_list(subdoc, list_node, ordered: bool, styles: TemplateStyleProfile, level: int = 0) -> None:
+    style_names = styles.ordered_list if ordered else styles.unordered_list
+    num_id = create_numbering_instance(subdoc.part, abstract_num_id=2) if ordered else None
     for li in list_node.find_all("li", recursive=False):
         li_copy = BeautifulSoup(li.encode_contents(), "html.parser")
         for nested in li_copy.find_all(["ul", "ol"]):
             nested.decompose()
         if li_copy.get_text(strip=True) or li_copy.find("code"):
-            add_paragraph_with_inline_code(subdoc, li_copy, style_name)
+            paragraph = add_paragraph_with_inline_code(
+                subdoc,
+                li_copy,
+                style_names,
+                styles.inline_code,
+                preserve_newlines=False,
+            )
+            if ordered and num_id is not None:
+                apply_numbering(paragraph, num_id, ilvl=min(level, 8))
         for nested in li.find_all(["ul", "ol"], recursive=False):
-            add_list(subdoc, nested, ordered=nested.name == "ol")
+            add_list(subdoc, nested, ordered=nested.name == "ol", styles=styles, level=level + 1)
 
 
 def format_language(lang: str) -> str:
@@ -219,7 +270,7 @@ def format_language(lang: str) -> str:
     return mapping.get(lang.lower(), lang.capitalize())
 
 
-def add_code_block(subdoc, pre_node) -> None:
+def add_code_block(subdoc, pre_node, styles: TemplateStyleProfile) -> None:
     code_node = pre_node.find("code")
     lang = None
     if code_node and code_node.has_attr("class"):
@@ -233,16 +284,16 @@ def add_code_block(subdoc, pre_node) -> None:
 
     if lang:
         p_lang = subdoc.add_paragraph(f"语言：{format_language(lang)}")
-        if not apply_style(p_lang, ["代码语言标记", "代码块"]):
+        if not apply_style(p_lang, styles.code_language):
             p_lang.style = "Normal"
 
     for line in code_text.split("\n"):
         p = subdoc.add_paragraph(line)
-        if not apply_style(p, ["代码块", "Normal"]):
+        if not apply_style(p, styles.code_block):
             p.style = "Normal"
 
 
-def add_table(subdoc, table_node) -> None:
+def add_table(subdoc, table_node, styles: TemplateStyleProfile) -> None:
     rows = []
     thead = table_node.find("thead")
     if thead:
@@ -266,7 +317,7 @@ def add_table(subdoc, table_node) -> None:
 
     max_cols = max(len(cells) for _, cells in rows)
     table = subdoc.add_table(rows=len(rows), cols=max_cols)
-    if not apply_style(table, ["CyanScript Table", "Normal Table", "Table Grid"]):
+    if not apply_style(table, styles.table):
         table.style = "Normal Table"
 
     for r_idx, (row_kind, cells) in enumerate(rows):
@@ -274,21 +325,28 @@ def add_table(subdoc, table_node) -> None:
         for c_idx in range(max_cols):
             cell = row.cells[c_idx]
             cell.text = cells[c_idx] if c_idx < len(cells) else ""
-            style_candidates = ["表格-表头", "表格表头"] if row_kind == "header" else ["表格-正文", "表格正文"]
+            style_names = styles.table_header_paragraph if row_kind == "header" else styles.table_body_paragraph
             for paragraph in cell.paragraphs:
-                apply_style(paragraph, style_candidates)
+                apply_style(paragraph, style_names)
 
 
-def render_markdown_to_subdoc(subdoc, md_path: str) -> None:
-    with open(md_path, "r", encoding="utf-8") as f:
-        md_text = f.read()
-
+def render_markdown_to_subdoc(
+    subdoc,
+    md_path: str,
+    md_text: str,
+    plan: HeadingNormalizationPlan | None = None,
+    template_profile: TemplateProfile | None = None,
+) -> None:
+    plan = plan or HeadingNormalizationPlan()
+    template_profile = template_profile or get_template_profile_by_path("backend/md2word/templates/reference.docx")
+    styles = template_profile.styles
     html = markdown(md_text, extensions=["extra"])
     soup = BeautifulSoup(html, "html.parser")
     body = soup.body if soup.body else soup
 
     fig_index = 0
     pending_table_caption = ""
+    first_h1_consumed_as_title = False
 
     def handle_image(src: str, caption: str) -> None:
         nonlocal fig_index
@@ -302,30 +360,30 @@ def render_markdown_to_subdoc(subdoc, md_path: str) -> None:
         caption_text = f"图{fig_index} {name}" if name else f"图{fig_index}"
         img_path = resolve_img_path(md_path, src)
         if os.path.exists(img_path):
-            add_centered_image(subdoc, img_path, 15)
-            add_caption(subdoc, caption_text)
+            add_centered_image(subdoc, img_path, 15, styles)
+            add_caption(subdoc, caption_text, styles)
         else:
-            add_paragraph(subdoc, f"[图片缺失: {src}]", "Normal")
-            add_caption(subdoc, caption_text)
+            add_paragraph(subdoc, f"[图片缺失: {src}]", styles.paragraph)
+            add_caption(subdoc, caption_text, styles)
 
     for node in body.children:
         if not hasattr(node, "name"):
             continue
-        if node.name == "h1":
-            add_heading(subdoc, strip_heading_number(node.get_text(strip=True)), "heading 1")
-        elif node.name == "h2":
-            add_heading(subdoc, strip_heading_number(node.get_text(strip=True)), "heading 2")
-        elif node.name == "h3":
-            add_heading(subdoc, strip_heading_number(node.get_text(strip=True)), "heading 3")
-        elif node.name == "h4":
-            add_heading(subdoc, strip_heading_number(node.get_text(strip=True)), "heading 4")
+        if node.name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+            original_level = int(node.name[1])
+            heading_text = strip_heading_number(node.get_text(strip=True))
+            if plan.skip_first_h1_in_body and original_level == 1 and not first_h1_consumed_as_title:
+                first_h1_consumed_as_title = True
+                continue
+            effective_level = max(1, original_level + plan.heading_shift)
+            render_heading_by_level(subdoc, heading_text, effective_level, styles)
         elif node.name == "p":
             text = node.get_text(strip=True)
             if text:
                 if re.match(r"^表\s*\d+\s+.+", text):
                     pending_table_caption = text
                 else:
-                    add_paragraph_with_inline_code(subdoc, node, "Normal")
+                    add_paragraph_with_inline_code(subdoc, node, styles.paragraph, styles.inline_code)
             for img in node.find_all("img"):
                 handle_image(img.get("src", ""), img.get("alt", "") or "")
             for link in node.find_all("a"):
@@ -338,35 +396,52 @@ def render_markdown_to_subdoc(subdoc, md_path: str) -> None:
                 for line in quote_text.split("\n"):
                     stripped = line.strip()
                     if stripped.startswith("提示:") or stripped.startswith("提示："):
-                        add_paragraph(subdoc, line, "提示块")
+                        add_paragraph(subdoc, line, styles.tip_quote)
                     elif stripped.startswith("注意:") or stripped.startswith("注意："):
-                        add_paragraph(subdoc, line, "注意块")
+                        add_paragraph(subdoc, line, styles.note_quote)
                     elif stripped.startswith("警告:") or stripped.startswith("警告："):
-                        add_paragraph(subdoc, line, "警告块")
+                        add_paragraph(subdoc, line, styles.warning_quote)
                     else:
-                        add_paragraph(subdoc, line, "引用块")
+                        add_paragraph(subdoc, line, styles.quote)
         elif node.name == "img":
             handle_image(node.get("src", ""), node.get("alt", "") or "")
         elif node.name == "table":
             if pending_table_caption:
                 p = subdoc.add_paragraph(pending_table_caption)
-                if not apply_style(p, ["表注", "Caption", "Normal"]):
+                if not apply_style(p, styles.table_caption):
                     p.style = "Normal"
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 pending_table_caption = ""
-            add_table(subdoc, node)
+            add_table(subdoc, node, styles)
         elif node.name == "ul":
-            add_list(subdoc, node, ordered=False)
+            add_list(subdoc, node, ordered=False, styles=styles)
         elif node.name == "ol":
-            add_list(subdoc, node, ordered=True)
+            add_list(subdoc, node, ordered=True, styles=styles)
         elif node.name == "pre":
-            add_code_block(subdoc, node)
+            add_code_block(subdoc, node, styles)
         elif node.name == "a":
             href = node.get("href", "")
             if href.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")):
                 handle_image(href, node.get_text(strip=True))
             else:
-                add_paragraph(subdoc, node.get_text(strip=True), "Normal")
+                add_paragraph(subdoc, node.get_text(strip=True), styles.paragraph)
+
+
+def resolve_subtitle(md_text: str, front_matter_plan: FrontMatterPlan) -> str:
+    if not front_matter_plan.has_subtitle:
+        return ""
+    return front_matter_plan.subtitle_text.strip()
+
+
+def resolve_cover_title(title: str, md_text: str, plan: HeadingNormalizationPlan) -> str:
+    if title.strip():
+        return title.strip()
+    if plan.title_text:
+        return plan.title_text.strip()
+    match = re.search(r"^#\s+(.+?)\s*$", md_text, flags=re.M)
+    if match:
+        return strip_heading_number(match.group(1).strip())
+    return ""
 
 
 def default_output_path(md_path: str) -> str:
@@ -389,10 +464,28 @@ def convert_markdown_to_docx(
     if not os.path.exists(template_path):
         raise FileNotFoundError(f"Template not found: {template_path}")
 
+    with open(md_path, "r", encoding="utf-8") as f:
+        md_text = f.read()
+
+    template_profile = get_template_profile_by_path(template_path)
+    decision = build_decision_plan(md_text)
+    normalized_md_text = normalize_markdown_with_decision(md_text, decision)
+    cover_title = resolve_cover_title(title, md_text, decision.heading_plan)
+    subtitle = resolve_subtitle(normalized_md_text, decision.front_matter_plan)
+
     tpl = DocxTemplate(template_path)
     subdoc = tpl.new_subdoc()
-    render_markdown_to_subdoc(subdoc, md_path)
-    tpl.render({"main_content": subdoc, "title": title})
+    render_markdown_to_subdoc(
+        subdoc,
+        md_path,
+        normalized_md_text,
+        decision.heading_plan,
+        template_profile=template_profile,
+    )
+    tpl.render({"main_content": subdoc, "title": cover_title, "subtitle": subtitle})
+    if not subtitle:
+        cleanup_placeholder_paragraph(tpl.docx, "{{subtitle}}")
+        remove_empty_subtitle_paragraph(tpl.docx, template_profile.styles.subtitle)
     update_fields_on_open(tpl.docx)
 
     out_dir = os.path.dirname(output_path)
@@ -403,34 +496,37 @@ def convert_markdown_to_docx(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Convert Markdown to Word (.docx) using a template")
-    parser.add_argument("-i", "--input", help="Path to Markdown file")
-    parser.add_argument("-t", "--template", help="Path to Word template (.docx)")
-    parser.add_argument("-o", "--output", help="Path to output .docx (optional)")
+    parser = argparse.ArgumentParser(description="Convert Markdown to DOCX using a reference template.")
+    parser.add_argument("-i", "--input", required=True, help="Path to the Markdown file")
+    parser.add_argument(
+        "-t",
+        "--template",
+        default="backend/md2word/templates/reference.docx",
+        help="Path to the DOCX template (default: backend/md2word/templates/reference.docx)",
+    )
+    parser.add_argument("-o", "--output", default=None, help="Output DOCX path")
+    parser.add_argument("--title", default="", help="Title used for cover/header placeholders")
     return parser
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args()
-
-    md_path = args.input
-    template_path = args.template
-    output_path = args.output
-
-    if not (md_path and template_path):
-        md_path = input("[INPUT] Markdown file: ").strip()
-        template_path = input("[INPUT] Word template (.docx): ").strip()
-        output_path = input("[INPUT] Output file (.docx, blank for default): ").strip() or None
+    args = parser.parse_args(argv)
 
     try:
-        final_path = convert_markdown_to_docx(md_path, template_path, output_path)
+        out_path = convert_markdown_to_docx(
+            md_path=args.input,
+            template_path=args.template,
+            output_path=args.output,
+            title=args.title,
+        )
     except Exception as exc:
-        print(f"[ERROR] {exc}")
-        sys.exit(1)
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
-    print(f"[OK] Generated: {final_path}")
+    print(out_path)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
