@@ -60,3 +60,6 @@ pnpm-debug.log*
 # Generated outputs
 output/
 *.docx
+
+
+release/

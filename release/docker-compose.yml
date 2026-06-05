@@ -1,7 +1,7 @@
 services:
   backend:
-    image: registry.cloudbility.com.cn/charmirror/multi-app/backend:r20260604.2
-    container_name: md2word-backend
+    image: registry.cloudbility.com.cn/charmirror/multi-app/backend:r20260605.1
+    container_name: multi-space-backend
     env_file:
       - .env
     expose:
@@ -9,8 +9,8 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: registry.cloudbility.com.cn/charmirror/multi-app/frontend:r20260604.2
-    container_name: md2word-frontend
+    image: registry.cloudbility.com.cn/charmirror/multi-app/frontend:r20260605.1
+    container_name: multi-space-frontend
     depends_on:
       - backend
     ports:
