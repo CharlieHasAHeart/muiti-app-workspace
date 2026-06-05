@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       target: dev
-    container_name: md2word-backend-dev
+    container_name: multi-space-backend-dev
     working_dir: /app
     env_file:
       - .env
@@ -19,7 +19,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       target: dev
-    container_name: md2word-frontend-dev
+    container_name: multi-space-frontend-dev
     working_dir: /app/frontend
     depends_on:
       - backend
